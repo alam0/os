@@ -1,0 +1,260 @@
+// myshell.c: a program capable of executing, managing, and monitoring user level programs. 
+// Aron Lam (alam3)
+// Operating System Principles
+// Instructor Thain
+// Date: 2/9/17
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <ctype.h>
+
+// Global Variables
+//---------------------
+char keepLooping = 1;
+char notInFunction = 1;
+
+// Helper Functions
+//-----------------------
+
+// Start function
+// start command will start another program with command line arguments, print out the process number of the running program, and then accept another line of input
+int startFunc(char *argv[]) {
+	notInFunction = 0;
+	int pid = fork();
+	if(pid < 0) {  // fork failed, exit
+		fprintf(stderr, "fork failed\n");
+		exit(1);
+	} else if (pid == 0) { // child process
+		printf("myshell: process %d started\n", getpid() );
+		
+		//printf("myshell> ");
+		// execution of command
+		notInFunction = 1;
+   	return 0;
+		execvp(argv[0], argv);
+	} 
+	notInFunction = 1;
+   return 0;
+}
+
+// Wait function
+// wait command takes no arguments, and causes the shell to wait until a process exits. 
+	// when this happens, indicate whether the exit was normal or abnormal, along with the exit code or signal number and name, respectively.
+int waitFunc() {
+	notInFunction = 0;
+	int statval;
+	int w = wait(&statval);
+	// run checks w/ manpage
+	if (w == -1) { // no processes to wait for, print appropriate message and accept another line of input
+		printf("myshell: no processes left\n");
+	} else if (WIFSIGNALED(statval)) {
+		printf("myshell: process %d exited abnormally with signal %d\n", w, WTERMSIG(statval));
+	} else if (WIFEXITED(statval) && WEXITSTATUS(statval) == 0) {
+		printf("myshell: process %d exited normally with status %d\n", w, WEXITSTATUS(statval));	
+	}
+	notInFunction = 1;
+	
+	return 0;
+}
+
+// Run function
+// run command combines the behavior of start and wait
+// run should start a program, possibly with command line args, wait for that process to finish, and print the exit status
+int runFunc(char *argv[]) {
+	int statval;
+	notInFunction = 0;
+	// fork
+	int pid = fork();
+	if(pid < 0) {  // fork failed, exit
+		fprintf(stderr, "fork failed\n");
+		exit(1);
+	} else if (pid == 0) { // child process
+		//Copy the file via exec and cp (using argument 1)
+		printf("myshell: process %d started\n", getpid() );
+		notInFunction = 1;
+		execvp(argv[0], argv);
+	} else { // parent process
+		waitpid(pid, &statval, 0); //options)
+		if (WIFEXITED(statval) && WEXITSTATUS(statval) == 0) {
+			printf("myshell: process %d exited normally with status %d\n", pid, WEXITSTATUS(statval));
+		} 
+	}
+	notInFunction = 1;
+   return 0;
+}
+
+// Kill function
+int killFunc(char *p) {
+	notInFunction = 0;
+	int i = 0;
+	while (i < strlen(p)) {
+		if (!isdigit(p[i])) {
+			printf("Error occurred killing process %s: %s is not an ID\n", p, p);
+			notInFunction = 1;
+			return 1;
+		}
+		i++;
+	}
+	// send signal
+	int status = kill(atoi(p), SIGKILL);
+	// error checking
+	if (status == 0) {
+		printf("my shell: process %s killed\n", p);
+	} else {
+		printf("Error occurred killing process %s: %s\n", p, strerror(errno));
+		notInFunction = 1;
+		return 1;
+	}
+
+	notInFunction = 1;
+	return 0;
+}
+
+// Stop function
+int stopFunc(char *p) {
+	notInFunction = 0;
+	int i = 0;
+	while (i < strlen(p)) {
+		if (!isdigit(p[i])) {
+			printf("Error occurred stopping process %s: %s is not an ID\n", p, p);
+			notInFunction = 1;
+			return 1;
+		}
+		i++;
+	}
+	// send signal
+	int status = kill(atoi(p), SIGSTOP);
+	// Error checking
+	if (status == 0) {
+		printf("my shell: process %d stopped\n", atoi(p));
+	} else {
+		printf("Error occurred stopping process %d: %s\n", atoi(p), strerror(errno));
+		notInFunction = 1;
+		return 1;
+	}
+	
+	notInFunction = 1;
+	return 0;
+}
+
+// continue function
+int continueFunc(char *p) {
+	notInFunction = 0;
+	int i = 0;
+	while (i < strlen(p)) {
+		if (!isdigit(p[i])) {
+			printf("Error occurred continuing process %s: %s is not an ID\n", p, p);
+			notInFunction = 1;
+			return 1;
+		}
+		i++;
+	}
+	// send signal
+	int status = kill(atoi(p), SIGCONT);
+	// error checking
+	if (status == 0) {
+		printf("my shell: process %s continued\n", p);
+	} else {
+		printf("Error occurred continuing process %s: %s\n", p, strerror(errno));
+		notInFunction = 1;
+		return 1;
+	}
+	
+	notInFunction = 1;
+	return 0;
+}
+
+// Main Execution
+//------------------
+int main( int argc, char *argv[] ) {
+	// array to read in lines with fgets
+	char line[4096];
+	
+	// While loop
+	while (keepLooping) {
+		// after each command completes, your program must continue to print a prompt and accept another line of input.
+		if (notInFunction) {
+			printf("myshell> ");
+			fflush(stdout);
+		}
+	
+		// use fgets to read one line of text after print the prompt.
+		if (fgets(line, 4097, stdin) == NULL) {
+			notInFunction = 0;
+			printf("myshell: end of file reached, exiting myshell\n");
+			exit(0);
+		}
+		
+		// Call strtok(line," \t\n") once to obtain the first word
+		char *tok;
+		tok = strtok(line," \t\n");
+		// If the user types a blank line, simply print another prompt and accept a new line of input
+		if (tok == NULL) {
+			continue;
+		} 
+		
+		// and then strtok(0," \t\n") repeatedly to get the rest, until it returns null.
+		char *next = "";
+		// keep track of # of words 
+		int nwords = 1;
+		// array of pointers to save pointers to words
+		char *words[100];
+		words[0] = tok;
+	
+		while (next != NULL) {
+			next = strtok(0," \t\n");
+			words[nwords] = next;
+			nwords++;
+		}
+		// reached last word
+		words[nwords] = 0;
+		// make sure to stop if fgets returns null, indicating EOF
+		
+		// work with strings in words array
+		// The shell should exit with status 0 if the command is quit or exit or the input reaches end-of-file. 
+		if (strcmp(words[0], "quit") == 0 || strcmp(words[0], "exit") == 0) {
+			exit(0);
+		} else if (strcmp(words[0],"start") == 0 && words[1] != 0) {
+			/*int starter = */ startFunc(&words[1]);
+		} else if (strcmp(words[0],"wait") == 0) {
+			if (words[1] == 0) {
+			/*int waiter = */ waitFunc();
+			} else {
+				printf("myshell: the wait command takes no arguments\n");
+			}
+		} else if (strcmp(words[0],"run") == 0 && words[1] != 0) {
+			/*int runner = */ runFunc(&words[1]);
+		} else if (strcmp(words[0],"kill") == 0 && words[1] != 0) {
+			if (words[2] == 0) {
+				/*int killer = */ killFunc(words[1]);
+			} else {
+				printf("myshell: kill command only takes one pid\n");
+			}
+		} else if (strcmp(words[0],"stop") == 0 && words[1] != 0) {
+			if (words[2] == 0) {
+				/*int stopper = */ stopFunc(words[1]);
+			} else {
+				printf("myshell: stop command only takes one pid\n");
+			}
+		} else if (strcmp(words[0],"continue") == 0 && words[1] != 0) {
+			if (words[2] == 0) {
+				/*int continuer = */ continueFunc(words[1]);
+			} else {
+				printf("myshell: continue command only takes one pid\n");
+			}
+		} else { // If the user tpyes any other command, print a reasonable error message
+			printf("myshell: unknown command: %s\n", words[0]);
+		}
+		
+	}
+
+	return 0;
+}

@@ -1,0 +1,7 @@
+File existed, compiled, and handled sigint: 5pts
+
+Error Handling:0 pts: Segfaults on EPERM, ENOENT, etc, does not write error string, or return exit 1
+
+Correct Copying: 35pts - no short message emmision while copying at the right time interval
+
+coding style: 9pts -don't need to put errno as an extern variable: decaired for you inside of errno.h
